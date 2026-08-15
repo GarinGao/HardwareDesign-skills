@@ -1,0 +1,42 @@
+# ── Python ──────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ── 项目运行时产物 ──────────────────────
+layout_manifest.json
+layout.json
+
+# ── 依赖 ────────────────────────────────
+node_modules/
+
+# ── Claude Code 本地配置 ────────────────
+.claude/
+CLAUDE.md
+
+# ── 环境变量 / 密钥 ─────────────────────
+.env
+.env.local
+*.pem
+*.key
+
+# ── 编辑器 / 系统 ───────────────────────
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# ── 日志 ────────────────────────────────
+*.log

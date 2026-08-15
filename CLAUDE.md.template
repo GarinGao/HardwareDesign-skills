@@ -1,0 +1,98 @@
+# <项目名> 硬件设计项目
+
+硬件设计项目，基于**嘉立创 EDA 专业版**平台进行 AI 原理图自动绘制。
+
+## 架构：决策与执行分离
+
+```
+需求文档 → /hardware-design → 设计文档 (.md) → generic_runner.py Phase 1 → layout_manifest.json → Phase 2 → 原理图完成
+               │                      │                        │                          │
+               │  器件选型+电路设计     │  结构化表格              │  布局计算+LCSC解析+连线     │  批量绘制
+               │  (所有决策在文档中)    │  (器件清单+连线清单)      │  (含精确坐标+net+wire)      │  (纯机械执行)
+```
+
+- **Phase 1 — 设计**：需求分析 → 器件选型（P0-P3 优先级）→ 电源树 → GPIO 分配 → 分模块电路设计。输出结构化器件清单 + 引脚连线清单。
+- **Phase 2 — 绘制**：
+  - Level 1 状态检测 → Level 2 `generic_runner.py` 两阶段执行：
+    - Phase 1：解析设计文档 → 布局计算（三列绝对网格）→ 生成 `layout_manifest.json`
+    - Phase 2：读取 JSON → `draw_engine.py` 批量桥接执行 → 收尾校验（BOM 交叉验证 + DRC + NC 引脚标记）
+  - 支持 `--dry-run`（仅生成 JSON）和 `--from-manifest`（仅从 JSON 绘制）独立运行
+
+## 用户入口
+
+| 用户说 | AI 执行 |
+|--------|---------|
+| "设计硬件" / "做硬件详细设计" | `/hardware-design` → 输出设计文档 |
+| "画原理图" / "根据设计文档画原理图" | `/schematic-draw` → 自动编排、批量绘制 |
+| "审查原理图" | `/review-sch` |
+| "研究某个器件" | `/component-research` |
+
+## EDA 环境
+
+```bash
+bash scripts/start-bridge.sh          # 一键启动
+curl http://localhost:49620/health    # 验证连接（edaConnected=true）
+```
+
+- EDA 工具：嘉立创 EDA 专业版桌面客户端 + `run-api-gateway.eext` 扩展
+- 通信：WebSocket Bridge Server（端口 49620-49629），HTTP POST `/execute`
+- Bridge 内部 30s 超时限制，超时不等于操作失败
+- 所有代码在 EDA 浏览器运行时执行，必须 `await` + `return`
+
+## 技术栈
+
+| 组件 | 说明 |
+|------|------|
+| `scripts/draw_engine.py` | 核心绘制引擎：批量桥接调用（1 模块 ~4 次调用）、`LayoutCalculator` 三列绝对网格布局（高度感知、边到边间距、边界检查）、`resolve_lcsc_ids()` LCSC 解析、放置安全检查（去重 + 验证 + BridgeError 处理） |
+| `scripts/generic_runner.py` | 通用绘制入口：**Phase 1** 解析设计文档 markdown 表格 → LCSC 解析 → 布局计算（两趟高度修正）→ 生成 `layout_manifest.json`；**Phase 2** 读取 JSON → 调用 `draw_engine.py` 批量绘制。新设计无需写脚本，只需维护设计文档表格 |
+| easyeda-api | EDA API 参考（120+ 类），Bridge Server 通信 |
+| lcsc-mcp | 立创商城元器件搜索（C 编号） |
+
+## Skills 速查
+
+### 设计入口
+| Skill | 用途 |
+|-------|------|
+| `/hardware-design` | 硬件详细设计（需求→P0-P3选型→电源树→GPIO分配→分模块设计+结构化清单+BOM核对） |
+| `/schematic-draw` | 原理图绘制（Level1状态检测→Level2布局计算+批量绘制引擎执行） |
+
+### 审查与研究
+| Skill | 用途 |
+|-------|------|
+| `/review-sch` | 原理图审查 |
+| `/component-research` | 器件研报（datasheet、参数、外围电路） |
+
+### API 参考
+| Skill | 用途 |
+|-------|------|
+| `/eda-sch` | 原理图 API |
+| `/eda-pcb` | PCB API |
+| `/eda-lib` | 器件库 API |
+| `/eda` | API 总览 |
+
+### 参考手册
+| 文件 | 说明 |
+|------|------|
+| `schematic-rules.md` | 布局规则、网络标签方法、门禁清单、常见错误 — 仅供参考，布局/连线规则由 `LayoutCalculator` 和 `DrawEngine` 自动执行 |
+
+## 关键设计约束
+
+- **单页图纸**：全模块共用一张图纸，同名 net 自动合并，消除跨页操作
+- **三列绝对网格**：X 从区域边界计算（左/中/右三列），Y 从顶部向下排列，不依赖引脚坐标
+- **边到边间距**：IC=80, CONN=60, CAP/RES/IND=40, LED/DIODE=60（非中心到中心）
+- **高度感知**：每个器件 Y 坐标考虑自身符号高度，防止边界溢出和重叠
+- **只打标签，禁止连线**：每个引脚独立短桩（左 30/右 10 单位），同名 net 自动互联
+- **放置安全检查**：前置去重（`filter_duplicates`）→ 放置 → 后置验证（`verify_placement`）
+- **Wire 幂等性规则**：每次 `draw_wires()` 前必须清除目标区域旧 wires，或对 wires 做位置去重。**禁止不清除旧 wires 就绘制**。原因：① 多趟运行（如 500 重试）会累积重复 wires → 同一 pin 上出现重叠 net 标签；② `generate_manifest` Step 3 重放时删了 components 但没删 wires，旧 wires 残留。
+- **器件选型 P0-P3**：P0=基础库+库存≥500，P1=优选库+库存≥100，P2=库存≥50，P3=慎用
+- **BOM 完整性核对**：每模块 12 项检查，防止以芯片为中心遗漏非直连器件
+
+## 注意事项
+
+- 必须使用嘉立创 EDA **桌面客户端**（网页版无法连接本地 WebSocket）
+- 电源/地符号（VCC/GND）需手动放置，AI 自动放置可能不正确
+- EDA 扩展在非原理图/PCB 页面不会自动连接
+
+## 许可证
+
+Copyright (c) 2026 **AI伙伴计划** | [MIT License](LICENSE)

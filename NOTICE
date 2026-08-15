@@ -1,0 +1,25 @@
+AI 驱动嘉立创 EDA 原理图自动绘制系统
+======================================
+
+版权声明
+--------
+
+Copyright (c) 2026 AI伙伴计划
+
+本仓库的全部代码与文档根据 MIT License 发布，详见 LICENSE 文件。
+
+第三方依赖
+----------
+
+本项目运行依赖以下外部组件。它们不属于本仓库，需单独获取，各自的许可协议以其官方发布为准：
+
+- easyeda-api
+  EasyEDA Pro API 参考 skill，提供 WebSocket Bridge Server（scripts/bridge-server.mjs）。
+  由 scripts/start-bridge.sh 调用，需安装到 ~/.claude/skills/easyeda-api。
+
+- run-api-gateway.eext
+  嘉立创 EDA 专业版（EasyEDA Pro）桌面客户端扩展插件，用于在 EDA 客户端内暴露本地 API 网关。
+  在嘉立创 EDA 扩展管理器中搜索「RUNAPI」安装。
+
+- lcsc-mcp
+  立创商城元器件搜索 MCP，用于器件选型阶段（可选）。
